@@ -9,7 +9,8 @@ import {
   Megaphone, Lock,
   Copy, Trash2,
   AlertTriangle, Palette, Bookmark, Wand2,
-  Image as ImageIcon, Film, Sun, Moon, Send, Wallet
+  Image as ImageIcon, Film, Sun, Moon, Send, Wallet,
+  Save, ChevronUp, ChevronDown
 } from 'lucide-react';
 
 // --- Types & Declarations ---
@@ -21,7 +22,7 @@ declare var process: {
   }
 };
 
-type ModalType = 'settings' | 'usage' | 'price' | 'support' | 'announcement' | 'edit-prompt' | 'styles' | 'library' | null;
+type ModalType = 'settings' | 'usage' | 'price' | 'support' | 'announcement' | 'styles' | 'library' | null;
 
 interface AppConfig {
   baseUrl: string;
@@ -264,7 +265,7 @@ const findImageUrlInObject = (obj: any): string | null => {
       if (found) return found;
     }
   } else if (typeof obj === 'object') {
-    const priorityKeys = ['url', 'b64_json', 'image', 'img', 'link', 'content', 'data', 'url'];
+    const priorityKeys = ['url', 'b64_json', 'image', 'img', 'link', 'content', 'data'];
     for (const key of priorityKeys) {
       if (obj[key]) {
         const found = findImageUrlInObject(obj[key]);
@@ -282,9 +283,9 @@ const findImageUrlInObject = (obj: any): string | null => {
 };
 
 // --- IndexedDB ---
-const DB_NAME = 'mx_ai_db';
+const DB_NAME = 'mx_ai_db_v2';
 const STORE_NAME = 'assets';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -347,11 +348,11 @@ const ModalHeader = ({ title, icon: Icon, onClose, bgColor = "bg-gradient-to-br 
 );
 
 const App = () => {
-  const [mainCategory, setMainCategory] = useState<'image' | 'video'>('image');
+  const [mainCategory, setMainCategory] = useState<'image' | 'video'>('video');
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
-  const [selectedVideoModel, setSelectedVideoModel] = useState(VIDEO_MODELS[0].id);
-  const [videoOptionIdx, setVideoOptionIdx] = useState(0);
-  const [videoRatio, setVideoRatio] = useState('9:16');
+  const [selectedVideoModel, setSelectedVideoModel] = useState('sora-2');
+  const [videoOptionIdx, setVideoOptionIdx] = useState(1); // Default to 15s (标清)
+  const [videoRatio, setVideoRatio] = useState('16:9');
   const [activeModal, setActiveModal] = useState<ModalType>('announcement');
   const [previewAsset, setPreviewAsset] = useState<GeneratedAsset | null>(null);
   const [config, setConfig] = useState<AppConfig>({ baseUrl: FIXED_BASE_URL, apiKey: '' });
@@ -361,13 +362,14 @@ const App = () => {
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [imageSize, setImageSize] = useState('AUTO');
   const [aspectRatio, setAspectRatio] = useState('1:1');
-  const [generationCount] = useState(1);
+  const [generationCount, setGenerationCount] = useState(1);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [balance, setBalance] = useState<string | null>(null);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+  const [showSettings, setShowSettings] = useState(true);
 
   const galleryRef = useRef<HTMLDivElement>(null);
   const configRef = useRef(config);
@@ -376,10 +378,6 @@ const App = () => {
   useEffect(() => {
     configRef.current = config;
   }, [config]);
-
-  useEffect(() => {
-    setVideoOptionIdx(0);
-  }, [selectedVideoModel]);
 
   useEffect(() => {
     if (mainCategory === 'image') {
@@ -560,117 +558,108 @@ const App = () => {
     if (e.target) e.target.value = '';
   };
 
-  const executeGeneration = async (overrideConfig?: any) => {
-    const tPrompt = overrideConfig?.prompt ?? prompt;
-    if (!tPrompt) { setError("请输入提示词"); return; }
+  const executeGeneration = async () => {
+    if (!prompt) { setError("请输入提示词"); return; }
     let key = config.apiKey || safeEnvKey;
-    if (mainCategory === 'video' && !overrideConfig) {
+    if (!key) { setActiveModal('settings'); return; }
+    
+    if (mainCategory === 'video') {
         executeVideoGeneration();
         return;
     }
-    const tModelId = overrideConfig?.modelId ?? selectedModel;
-    const tRatio = overrideConfig?.aspectRatio ?? aspectRatio;
-    const tSize = overrideConfig?.imageSize ?? imageSize;
-    const tRefs = overrideConfig?.referenceImages ?? referenceImages;
-    const count = overrideConfig ? 1 : generationCount;
+
     const startTime = Date.now();
     const placeholders: GeneratedAsset[] = [];
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < generationCount; i++) {
         placeholders.push({
-            id: generateUUID(), url: '', type: 'image', prompt: tPrompt,
-            modelId: tModelId, modelName: MODELS.find(m => m.id === tModelId)?.name || tModelId,
-            durationText: tSize, genTimeLabel: '生成中...',
+            id: generateUUID(), url: '', type: 'image', prompt: prompt,
+            modelId: selectedModel, modelName: MODELS.find(m => m.id === selectedModel)?.name || selectedModel,
+            durationText: imageSize, genTimeLabel: '生成中...',
             timestamp: startTime, status: 'loading',
-            config: { modelId: tModelId, aspectRatio: tRatio, imageSize: tSize, prompt: tPrompt, referenceImages: tRefs ? [...tRefs] : [], type: 'image' }
+            config: { modelId: selectedModel, aspectRatio, imageSize, prompt, referenceImages: [...referenceImages], type: 'image' }
         });
     }
     setGeneratedAssets(prev => [...placeholders, ...prev]);
     setError(null);
 
-    if (tModelId === 'kling-image-o1') {
-        const createOneKling = async (pId: string) => {
-            try {
-                 const res = await fetch(`${config.baseUrl}/kling/v1/images/omni-image`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-                    body: JSON.stringify({ model_name: "kling-image-o1", prompt: tPrompt, n: 1, aspect_ratio: tRatio, resolution: tSize.toLowerCase(), image_list: tRefs.map((img: any) => ({ image: img.data.startsWith('http') ? img.data : `data:${img.mimeType};base64,${img.data}` })) })
-                 });
-                 const data = await res.json();
-                 if (data.code !== 0) throw new Error(data.message);
-                 const tid = data.data?.task_id;
-                 const p = placeholders.find(x => x.id === pId);
-                 if (p && tid) {
-                     const updatedAsset: any = { ...p, status: 'queued', taskId: tid };
-                     setGeneratedAssets(prev => prev.map(a => a.id === pId ? updatedAsset : a));
-                     saveAssetToDB(updatedAsset);
-                     startKlingImagePolling(tid, pId, startTime);
-                 }
-            } catch (e: any) {
-                 setGeneratedAssets(prev => prev.map(a => a.id === pId ? { ...a, status: 'failed', genTimeLabel: '失败' } : a));
-                 setError(e.message);
-            }
-        };
-        placeholders.forEach(p => createOneKling(p.id));
-        return;
-    }
-
     placeholders.forEach(async (p) => {
       const start = Date.now();
-      let url = '';
       try {
-          const content: any[] = [{ type: "text", text: `${tPrompt} --aspect-ratio ${tRatio}` }];
-          if (tRefs && tRefs.length > 0) tRefs.forEach((img: any) => content.push({ type: "image_url", image_url: { url: img.data.startsWith('http') ? img.data : `data:${img.mimeType};base64,${img.data}` } }));
+          const content: any[] = [{ type: "text", text: `${prompt} --aspect-ratio ${aspectRatio}` }];
+          if (referenceImages.length > 0) {
+              referenceImages.forEach((img) => content.push({ type: "image_url", image_url: { url: `data:${img.mimeType};base64,${img.data}` } }));
+          }
+          
           const res = await fetch(`${config.baseUrl}/v1/chat/completions`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-              body: JSON.stringify({ model: tModelId, messages: [{ role: "user", content }], stream: false })
+              body: JSON.stringify({ model: selectedModel, messages: [{ role: "user", content }], stream: false })
           });
           const data = await res.json();
-          url = findImageUrlInObject(data) || findImageUrlInObject(data.choices?.[0]?.message?.content) || '';
-      } catch (e) { console.error(e); }
-      const diff = Math.round((Date.now() - start) / 1000);
-      if (url) {
-          const updated: GeneratedAsset = { ...p, url, genTimeLabel: `${diff}s`, status: 'completed', timestamp: Date.now() };
-          setGeneratedAssets(prev => prev.map(a => a.id === p.id ? updated : a));
-          saveAssetToDB(updated);
-          if (configRef.current.apiKey) fetchBalance(configRef.current.apiKey, configRef.current.baseUrl);
-      } else {
+          if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+          
+          const url = findImageUrlInObject(data) || findImageUrlInObject(data.choices?.[0]?.message?.content) || '';
+          const diff = Math.round((Date.now() - start) / 1000);
+          if (url) {
+              const updated: GeneratedAsset = { ...p, url, genTimeLabel: `${diff}s`, status: 'completed', timestamp: Date.now() };
+              setGeneratedAssets(prev => prev.map(a => a.id === p.id ? updated : a));
+              saveAssetToDB(updated);
+              if (configRef.current.apiKey) fetchBalance(configRef.current.apiKey, configRef.current.baseUrl);
+          } else {
+              throw new Error("无法从API响应中提取图片路径，请检查卡密余额或提示词合规性");
+          }
+      } catch (e: any) { 
+          setError(e.message);
           setGeneratedAssets(prev => prev.map(a => a.id === p.id ? { ...a, status: 'failed', genTimeLabel: '失败' } : a));
       }
     });
   };
 
   const executeVideoGeneration = async () => {
-    if (!prompt) { setError("请输入提示词"); return; }
     let key = config.apiKey || safeEnvKey;
     const startTime = Date.now();
-    const pId = generateUUID();
-    const placeholder: GeneratedAsset = {
-        id: pId, url: '', type: 'video', prompt: prompt,
-        modelId: selectedVideoModel, modelName: VIDEO_MODELS.find(m => m.id === selectedVideoModel)!.name,
-        durationText: `${VIDEO_MODELS.find(m => m.id === selectedVideoModel)!.options[videoOptionIdx].s}s`,
-        genTimeLabel: '生成中...', timestamp: startTime, status: 'loading',
-        config: { modelId: selectedVideoModel, videoRatio, videoOptionIdx, prompt, referenceImages: [...referenceImages], type: 'video' }
-    };
-    setGeneratedAssets(prev => [placeholder, ...prev]);
-    try {
-        const payload: any = { model: selectedVideoModel, prompt, images: referenceImages.map(img => img.data.startsWith('http') ? img.data : `data:${img.mimeType};base64,${img.data}`), aspect_ratio: videoRatio };
-        const res = await fetch(`${config.baseUrl}/v1/video/create`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`, 'Accept': 'application/json' },
-            body: JSON.stringify(payload)
+    
+    const placeholders: GeneratedAsset[] = [];
+    for (let i = 0; i < generationCount; i++) {
+        placeholders.push({
+            id: generateUUID(), url: '', type: 'video', prompt: prompt,
+            modelId: selectedVideoModel, modelName: VIDEO_MODELS.find(m => m.id === selectedVideoModel)!.name,
+            durationText: `${VIDEO_MODELS.find(m => m.id === selectedVideoModel)!.options[videoOptionIdx]?.s || '8'}s`,
+            genTimeLabel: '生成中...', timestamp: startTime, status: 'loading',
+            config: { modelId: selectedVideoModel, videoRatio, videoOptionIdx, prompt, referenceImages: [...referenceImages], type: 'video' }
         });
-        const data = await res.json();
-        const tid = data.id || data.data?.id || data.task_id;
-        if (!tid) throw new Error("No task ID");
-        const updatedAsset: any = { ...placeholder, status: 'queued', taskId: tid };
-        setGeneratedAssets(prev => prev.map(a => a.id === pId ? updatedAsset : a));
-        saveAssetToDB(updatedAsset);
-        startVideoPolling(tid, pId, startTime, selectedVideoModel);
-    } catch (e: any) {
-        setError(e.message);
-        setGeneratedAssets(prev => prev.map(a => a.id === pId ? { ...a, status: 'failed', genTimeLabel: '失败' } : a));
     }
+    setGeneratedAssets(prev => [...placeholders, ...prev]);
+    setError(null);
+
+    placeholders.forEach(async (p) => {
+        try {
+            const payload: any = { 
+                model: selectedVideoModel, 
+                prompt, 
+                images: referenceImages.map(img => `data:${img.mimeType};base64,${img.data}`), 
+                aspect_ratio: videoRatio 
+            };
+            const res = await fetch(`${config.baseUrl}/v1/video/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`, 'Accept': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+            
+            const tid = data.id || data.data?.id || data.task_id;
+            if (!tid) throw new Error("API 未返回任务ID，请检查卡密及配置");
+            
+            const updatedAsset: any = { ...p, status: 'queued', taskId: tid };
+            setGeneratedAssets(prev => prev.map(a => a.id === p.id ? updatedAsset : a));
+            saveAssetToDB(updatedAsset);
+            startVideoPolling(tid, p.id, startTime, selectedVideoModel);
+        } catch (e: any) {
+            setError(e.message);
+            setGeneratedAssets(prev => prev.map(a => a.id === p.id ? { ...a, status: 'failed', genTimeLabel: '失败' } : a));
+        }
+    });
   };
 
   const handleAssetDelete = (id: string, e: React.MouseEvent) => {
@@ -705,6 +694,16 @@ const App = () => {
     } catch (e) { setError("优化失败"); } finally { setIsOptimizing(false); }
   };
 
+  const savePromptToLibrary = () => {
+    if (!prompt.trim()) return;
+    const newId = generateUUID();
+    const updated = [{ id: newId, text: prompt.trim() }, ...libraryPrompts];
+    setLibraryPrompts(updated);
+    localStorage.setItem('mx_library_prompts', JSON.stringify(updated));
+    setError("提示词已保存到词库");
+    setTimeout(() => setError(null), 3000);
+  };
+
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-500 ${isDarkMode ? 'bg-[#121212] text-white' : 'bg-[#F9FAFB] text-black'}`}>
       
@@ -720,7 +719,7 @@ const App = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <button onClick={() => setActiveModal('price')} className={`p-2 rounded-full transition-all ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`} title="价格说明">
+          <button onClick={() => setActiveModal('styles')} className={`p-2 rounded-full transition-all ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`} title="价格说明">
             <span className="text-lg font-bold">¥</span>
           </button>
           
@@ -740,7 +739,7 @@ const App = () => {
         </div>
       </header>
 
-      <main ref={galleryRef} className="flex-1 overflow-y-auto p-6 pb-48 no-scrollbar">
+      <main ref={galleryRef} className="flex-1 overflow-y-auto p-6 pb-64 no-scrollbar">
         {generatedAssets.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center opacity-20">
             <Bot className="w-32 h-32 mb-4" />
@@ -764,7 +763,7 @@ const App = () => {
                   ) : asset.type === 'video' ? (
                     <video src={asset.url} className="w-full h-full object-cover" muted loop autoPlay />
                   ) : (
-                    <img src={asset.url} className="w-full h-full object-cover" />
+                    <img src={asset.url} alt="Gen" className="w-full h-full object-cover" />
                   )}
                   
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
@@ -786,6 +785,7 @@ const App = () => {
         )}
       </main>
 
+      {/* FIXED BOTTOM CONTROLS */}
       <div className="fixed bottom-0 inset-x-0 p-4 z-40">
         <div className={`max-w-4xl mx-auto rounded-[2rem] border-2 shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ${isDarkMode ? 'bg-[#252525] border-white/10' : 'bg-white border-slate-200'}`}>
           
@@ -798,50 +798,74 @@ const App = () => {
             </div>
           )}
 
-          <div className="flex border-b border-black/5">
-            <button onClick={() => setMainCategory('image')} className={`flex-1 py-3 text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all ${mainCategory === 'image' ? (isDarkMode ? 'bg-cyan-400/10 text-cyan-400' : 'bg-cyan-50 text-cyan-600') : 'text-slate-400 hover:text-slate-600'}`}>
-              <ImageIcon className="w-4 h-4"/> 图片创作
+          {/* Expandable Generation Settings - Downward Expansion */}
+          <div className={`border-b transition-all duration-300 overflow-hidden ${showSettings ? 'max-h-[300px] opacity-100' : 'max-h-0 opacity-0'}`}>
+            <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4 bg-black/5">
+                <div className="space-y-1">
+                    <label className="text-[9px] font-black uppercase italic text-slate-500">2. 生成配置/GENERATION SETTINGS</label>
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-bold opacity-50 uppercase">选择生成模型 GENRE</span>
+                        <select value={mainCategory === 'image' ? selectedModel : selectedVideoModel} onChange={e => mainCategory === 'image' ? setSelectedModel(e.target.value) : setSelectedVideoModel(e.target.value)} className={`w-full text-[10px] font-bold px-2 py-2 rounded-lg border bg-transparent focus:outline-none ${isDarkMode ? 'border-white/10' : 'border-slate-300'}`}>
+                            {(mainCategory === 'image' ? MODELS : VIDEO_MODELS).map(m => <option key={m.id} value={m.id} className="text-black">{m.name}</option>)}
+                        </select>
+                    </div>
+                </div>
+
+                {mainCategory === 'video' && (
+                    <div className="space-y-1">
+                        <span className="text-[10px] font-bold opacity-50 uppercase">时长/选择 DURATION</span>
+                        <div className="flex flex-wrap gap-1">
+                            {VIDEO_MODELS.find(m => m.id === selectedVideoModel)?.options.map((opt, idx) => (
+                                <button key={idx} onClick={() => setVideoOptionIdx(idx)} className={`text-[9px] font-black px-2 py-1.5 rounded border transition-all ${videoOptionIdx === idx ? 'bg-cyan-400 border-cyan-400 text-white' : 'bg-transparent border-slate-300 text-slate-400'}`}>
+                                    {opt.s}S({opt.q})
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <div className="space-y-1">
+                    <span className="text-[10px] font-bold opacity-50 uppercase">比例 ASPECT RATIO</span>
+                    <select value={mainCategory === 'image' ? aspectRatio : videoRatio} onChange={e => mainCategory === 'image' ? setAspectRatio(e.target.value) : setVideoRatio(e.target.value)} className={`w-full text-[10px] font-bold px-2 py-2 rounded-lg border bg-transparent focus:outline-none ${isDarkMode ? 'border-white/10' : 'border-slate-300'}`}>
+                        {(mainCategory === 'image' ? (MODELS.find(m => m.id === selectedModel)?.supportedAspectRatios || []) : (VIDEO_MODELS.find(m => m.id === selectedVideoModel)?.supportedAspectRatios || [])).map(r => <option key={r} value={r} className="text-black">{r}</option>)}
+                    </select>
+                </div>
+
+                <div className="space-y-1">
+                    <div className="flex justify-between">
+                        <span className="text-[10px] font-bold opacity-50 uppercase">生成数量 BATCH</span>
+                        <span className="text-[10px] font-black text-cyan-500">{generationCount}</span>
+                    </div>
+                    <input type="range" min="1" max="10" value={generationCount} onChange={e => setGenerationCount(parseInt(e.target.value))} className="w-full h-1 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-cyan-400" />
+                </div>
+            </div>
+          </div>
+
+          <div className="flex border-b border-black/5 bg-slate-50 dark:bg-black/20">
+            <button onClick={() => setMainCategory('image')} className={`flex-1 py-3 text-[10px] font-black uppercase flex items-center justify-center gap-2 transition-all ${mainCategory === 'image' ? 'bg-white dark:bg-white/10 text-cyan-500' : 'text-slate-400 opacity-60'}`}>
+              <ImageIcon className="w-3.5 h-3.5"/> 图片创作 / IMAGE
             </button>
-            <button onClick={() => setMainCategory('video')} className={`flex-1 py-3 text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all ${mainCategory === 'video' ? (isDarkMode ? 'bg-cyan-400/10 text-cyan-400' : 'bg-cyan-50 text-cyan-600') : 'text-slate-400 hover:text-slate-600'}`}>
-              <Film className="w-4 h-4"/> 视频制作
+            <button onClick={() => setMainCategory('video')} className={`flex-1 py-3 text-[10px] font-black uppercase flex items-center justify-center gap-2 transition-all ${mainCategory === 'video' ? 'bg-white dark:bg-white/10 text-cyan-500' : 'text-slate-400 opacity-60'}`}>
+              <Film className="w-3.5 h-3.5"/> 视频制作 / VIDEO
+            </button>
+            <button onClick={() => setShowSettings(!showSettings)} className="px-5 text-slate-400 hover:text-cyan-500 transition-all flex items-center gap-1 group">
+                <span className="text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity uppercase">{showSettings ? '收起配置' : '展开配置'}</span>
+                {showSettings ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
           </div>
 
-          {referenceImages.length > 0 && (
-            <div className="p-3 flex gap-3 overflow-x-auto border-b border-black/5 bg-black/5">
-              {referenceImages.map(img => (
-                <div key={img.id} className="relative w-16 h-16 rounded-xl overflow-hidden group">
-                  <img src={img.data.startsWith('http') ? img.data : `data:${img.mimeType};base64,${img.data}`} alt="Ref" className="w-full h-full object-cover" />
-                  <button onClick={() => setReferenceImages(prev => prev.filter(i => i.id !== img.id))} className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100"><X className="w-3 h-3"/></button>
-                </div>
-              ))}
-              <label className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:border-cyan-400 transition-all flex-shrink-0">
-                 <Plus className="w-5 h-5 text-slate-400" />
-                 <input type="file" multiple={mainCategory === 'image'} className="hidden" onChange={handleImageUpload} />
-              </label>
-            </div>
-          )}
-
           <div className="p-4 space-y-3">
              <div className="flex flex-wrap gap-2 items-center">
-                <select value={mainCategory === 'image' ? selectedModel : selectedVideoModel} onChange={e => mainCategory === 'image' ? setSelectedModel(e.target.value) : setSelectedVideoModel(e.target.value)} className={`text-[10px] font-bold px-2 py-1.5 rounded-full border bg-transparent focus:outline-none focus:ring-1 focus:ring-cyan-400 ${isDarkMode ? 'border-white/10' : 'border-slate-200'}`}>
-                  {(mainCategory === 'image' ? MODELS : VIDEO_MODELS).map(m => <option key={m.id} value={m.id} className="text-black">{m.name}</option>)}
-                </select>
-
-                <select value={mainCategory === 'image' ? aspectRatio : videoRatio} onChange={e => mainCategory === 'image' ? setAspectRatio(e.target.value) : setVideoRatio(e.target.value)} className={`text-[10px] font-bold px-2 py-1.5 rounded-full border bg-transparent focus:outline-none focus:ring-1 focus:ring-cyan-400 ${isDarkMode ? 'border-white/10' : 'border-slate-200'}`}>
-                  {(mainCategory === 'image' ? (MODELS.find(m => m.id === selectedModel)?.supportedAspectRatios || []) : (VIDEO_MODELS.find(m => m.id === selectedVideoModel)?.supportedAspectRatios || [])).map(r => <option key={r} value={r} className="text-black">{r}</option>)}
-                </select>
-                
-                <div className="flex-1" />
-                
                 <button onClick={() => setActiveModal('styles')} className="text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1 hover:bg-black/5 transition-all"><Palette className="w-3 h-3"/> 风格</button>
-                <button onClick={() => setActiveModal('library')} className="text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1 hover:bg-black/5 transition-all"><Bookmark className="w-3 h-3"/> 收藏</button>
+                <button onClick={() => setActiveModal('library')} className="text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1 hover:bg-black/5 transition-all"><Bookmark className="w-3 h-3"/> 词库</button>
+                <button onClick={savePromptToLibrary} className="text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1 hover:bg-black/5 transition-all"><Save className="w-3 h-3"/> 保存提示词</button>
+                <div className="flex-1" />
                 <button onClick={optimizePrompt} disabled={isOptimizing} className={`text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1 transition-all ${isOptimizing ? 'animate-pulse' : 'hover:bg-black/5'}`}>
-                  {isOptimizing ? <Loader2 className="w-3 h-3 animate-spin"/> : <Wand2 className="w-3 h-3"/>} 优化
+                  {isOptimizing ? <Loader2 className="w-3 h-3 animate-spin"/> : <Wand2 className="w-3 h-3"/>} AI优化
                 </button>
              </div>
 
-             <div className={`relative flex items-center rounded-2xl border-2 px-3 py-1 transition-all group-focus-within:border-cyan-400/50 ${isDarkMode ? 'border-white/5 bg-white/5' : 'border-slate-100 bg-slate-50'}`}>
+             <div className={`relative flex items-center rounded-2xl border-2 px-3 py-1 transition-all ${isDarkMode ? 'border-white/5 bg-white/5' : 'border-slate-200 bg-slate-50 shadow-inner'}`}>
                 <label className="p-2 cursor-pointer text-slate-400 hover:text-cyan-500 transition-colors flex-shrink-0">
                   <ImageIcon className="w-5 h-5" />
                   <input type="file" multiple={mainCategory === 'image'} className="hidden" onChange={handleImageUpload} />
@@ -850,39 +874,40 @@ const App = () => {
                 <textarea 
                   value={prompt}
                   onChange={e => setPrompt(e.target.value)}
-                  placeholder="说点什么，让艺术发生..."
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-3 px-2 resize-none h-12 no-scrollbar"
+                  placeholder="请输入提示词描述 PROMPT..."
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-3 px-2 resize-none h-14 no-scrollbar"
                 />
                 
-                <button onClick={() => executeGeneration()} className="w-10 h-10 rounded-full bg-gradient-to-br from-[#22D3EE] to-[#10B981] text-white flex items-center justify-center hover:scale-105 transition-transform shadow-lg shadow-cyan-400/20 flex-shrink-0">
-                  <Send className="w-5 h-5" />
+                <button onClick={executeGeneration} className="w-12 h-12 rounded-full bg-gradient-to-br from-[#22D3EE] to-[#10B981] text-white flex items-center justify-center hover:scale-105 transition-transform shadow-lg shadow-cyan-400/30 flex-shrink-0">
+                  <Send className="w-6 h-6" />
                 </button>
              </div>
           </div>
         </div>
       </div>
 
+      {/* MODALS */}
       {activeModal === 'settings' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className={`w-full max-w-md rounded-2xl overflow-hidden shadow-2xl transition-colors ${isDarkMode ? 'bg-[#1E1E1E]' : 'bg-white'}`}>
-            <ModalHeader title="输入卡密" icon={Settings2} onClose={() => setActiveModal(null)} />
+            <ModalHeader title="设置 / SETTINGS" icon={Settings2} onClose={() => setActiveModal(null)} />
             <div className="p-8 space-y-6">
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-xl font-black uppercase tracking-widest italic flex items-center gap-2">
-                    <Lock className="w-5 h-5" /> 卡密填写
+                  <label className="text-sm font-bold uppercase flex items-center gap-2">
+                    <Lock className="w-4 h-4" /> 输入卡密 / API KEY
                   </label>
                   <input 
                     type="password" 
                     value={tempConfig.apiKey} 
                     onChange={e => setTempConfig({...tempConfig, apiKey: e.target.value})} 
                     placeholder="请输入您的卡密..." 
-                    className={`w-full p-4 rounded-xl border-2 font-bold text-lg focus:outline-none transition-all ${isDarkMode ? 'bg-white/5 border-white/10 focus:border-cyan-400' : 'bg-slate-50 border-slate-200 focus:border-cyan-400'}`}
+                    className={`w-full p-4 rounded-xl border-2 font-bold text-lg focus:outline-none transition-all ${isDarkMode ? 'bg-white/5 border-white/10 focus:border-cyan-400' : 'bg-slate-50 border-slate-300 focus:border-cyan-400'}`}
                   />
                 </div>
               </div>
               <button onClick={saveConfig} className="w-full py-4 rounded-xl bg-gradient-to-br from-[#22D3EE] to-[#10B981] text-white font-black text-xl shadow-xl shadow-cyan-400/20 hover:scale-[1.02] transition-all uppercase italic">
-                保存并生效 / SAVE
+                确认生效 / SAVE
               </button>
             </div>
           </div>
@@ -900,37 +925,6 @@ const App = () => {
               <p className="text-lg font-bold uppercase italic tracking-wider">扫码添加客服微信号</p>
             </div>
           </div>
-        </div>
-      )}
-
-      {activeModal === 'price' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className={`w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl ${isDarkMode ? 'bg-[#1E1E1E]' : 'bg-white'}`}>
-                <ModalHeader title="价格说明 / PRICE" icon="¥" onClose={() => setActiveModal(null)} />
-                <div className="max-h-[60vh] overflow-y-auto no-scrollbar">
-                    <div className="p-0">
-                        <div className="bg-slate-700/10 dark:bg-white/5 px-6 py-2 font-bold text-cyan-500 uppercase italic text-xs border-y border-black/5">AI优化</div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span className="font-bold">gemini-3-flash-preview</span><span>0.002元/次</span></div>
-                        
-                        <div className="bg-slate-700/10 dark:bg-white/5 px-6 py-2 font-bold text-cyan-500 uppercase italic text-xs border-y border-black/5">图片模型</div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>Gemini 2.5 Flash</span><span>0.06元/张</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>Gemini 3 Pro</span><span>0.22 - 0.40元/张</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>Kling Image O1</span><span>0.24元/张</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>gpt-image-1</span><span>0.06元/张</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>gpt-image-1.5</span><span>0.06元/张</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>Grok 4 Image</span><span>0.06元/张</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>Jimeng 4.5</span><span>0.13元/张</span></div>
-                        
-                        <div className="bg-slate-700/10 dark:bg-white/5 px-6 py-2 font-bold text-cyan-500 uppercase italic text-xs border-y border-black/5">视频模型</div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>VEO 3.1 FAST</span><span>0.11元/次</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>VEO 3.1 PRO</span><span>2.45元/次</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>Jimeng Video 3.0</span><span>0.266元/条</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>Sora 2</span><span>0.08元/条</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>Sora 2 Pro</span><span>2.52元/条</span></div>
-                        <div className="px-6 py-3 flex justify-between border-b border-black/5"><span>Grok Video 3</span><span>0.14元/条</span></div>
-                    </div>
-                </div>
-            </div>
         </div>
       )}
 
@@ -967,8 +961,8 @@ const App = () => {
               </div>
               <div className="space-y-4 italic font-bold text-slate-400 leading-relaxed">
                  <p>1. 全新 UI 升级，带来更沉浸的创作体验。</p>
-                 <p>2. 新增深色模式，保护视力。</p>
-                 <p>3. 优化的生成指令框，操作更丝滑。</p>
+                 <p>2. 新增视频生图批量模式，支持1-10张连发。</p>
+                 <p>3. 默认 SORA2 视频模型，体验最新 AI 视界。</p>
               </div>
               <button onClick={() => setActiveModal(null)} className="w-full py-4 rounded-xl bg-black text-white font-black hover:bg-slate-800 transition-colors uppercase">进入创作 / ENTER</button>
             </div>
@@ -982,7 +976,7 @@ const App = () => {
                 <ModalHeader title="风格选择 / STYLES" icon={Palette} onClose={() => setActiveModal(null)} />
                 <div className="flex-1 overflow-y-auto p-6 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 no-scrollbar">
                    {STYLES.map(s => (
-                     <button key={s.zh} onClick={() => selectStyle(s.zh)} className={`p-4 rounded-2xl border-2 transition-all font-bold text-sm ${isDarkMode ? 'bg-white/5 border-white/5 hover:border-cyan-400' : 'bg-slate-50 border-slate-100 hover:border-cyan-400'}`}>
+                     <button key={s.zh} onClick={() => selectStyle(s.zh)} className={`p-4 rounded-2xl border-2 transition-all font-bold text-sm ${isDarkMode ? 'bg-white/5 border-white/5 hover:border-cyan-400' : 'bg-slate-50 border-slate-200 hover:border-cyan-400'}`}>
                         {s.zh}
                      </button>
                    ))}
@@ -994,13 +988,13 @@ const App = () => {
       {activeModal === 'library' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
             <div className={`w-full max-w-2xl max-h-[70vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col ${isDarkMode ? 'bg-[#1E1E1E]' : 'bg-white'}`}>
-                <ModalHeader title="收藏夹 / LIBRARY" icon={Bookmark} onClose={() => setActiveModal(null)} />
+                <ModalHeader title="词库 / PROMPT LIBRARY" icon={Bookmark} onClose={() => setActiveModal(null)} />
                 <div className="flex-1 overflow-y-auto p-6 space-y-3 no-scrollbar">
                    {libraryPrompts.length === 0 ? (
                      <div className="h-40 flex items-center justify-center text-slate-500 font-bold uppercase italic opacity-20">暂无收藏</div>
                    ) : (
                      libraryPrompts.map(p => (
-                       <div key={p.id} onClick={() => { setPrompt(p.text); setActiveModal(null); }} className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${isDarkMode ? 'bg-white/5 border-white/5 hover:border-cyan-400' : 'bg-slate-50 border-slate-100 hover:border-cyan-400'}`}>
+                       <div key={p.id} onClick={() => { setPrompt(p.text); setActiveModal(null); }} className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${isDarkMode ? 'bg-white/5 border-white/5 hover:border-cyan-400' : 'bg-slate-50 border-slate-200 hover:border-cyan-400'}`}>
                           <p className="text-sm italic">{p.text}</p>
                        </div>
                      ))
