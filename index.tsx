@@ -2,14 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
-  Settings2, Sparkles, Video, 
+  Settings2, 
   Loader2, Download,
   Bot, X, AlertCircle, Plus,
-  RefreshCw, Edit, Maximize2, Headset, Check,
-  Square, CheckSquare, Megaphone, ExternalLink, Lock,
-  History, Copy, ClipboardCheck, Trash2,
-  AlertTriangle, Palette, Bookmark, Wand2, GripVertical, Save,
-  Image as ImageIcon, Film, Sun, Moon, Send, Upload, Wallet
+  RefreshCw, Maximize2, Headset,
+  Megaphone, Lock,
+  Copy, Trash2,
+  AlertTriangle, Palette, Bookmark, Wand2,
+  Image as ImageIcon, Film, Sun, Moon, Send, Wallet
 } from 'lucide-react';
 
 // --- Types & Declarations ---
@@ -67,19 +67,6 @@ interface SavedPrompt {
 // --- Constants ---
 
 const FIXED_BASE_URL = 'https://www.vivaapi.cn';
-
-const ASPECT_RATIO_LABELS: Record<string, string> = {
-  '1:1': '1:1',
-  '2:3': '2:3',
-  '3:2': '3:2',
-  '3:4': '3:4',
-  '4:3': '4:3',
-  '4:5': '4:5',
-  '5:4': '5:4',
-  '9:16': '9:16',
-  '16:9': '16:9',
-  '21:9': '21:9',
-};
 
 const EXTENDED_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
 const GPT1_RATIOS = ['1:1', '2:3', '3:2'];
@@ -257,31 +244,6 @@ const generateUUID = () => {
   });
 };
 
-const base64ToBlob = (base64: string, mimeType: string) => {
-  try {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: mimeType });
-  } catch (e) {
-    console.error("base64ToBlob failed", e);
-    return null;
-  }
-};
-
-const urlToBlob = async (url: string) => {
-    try {
-        const response = await fetch(url);
-        return await response.blob();
-    } catch (e) {
-        console.error("urlToBlob failed", e);
-        return null;
-    }
-};
-
 const findImageUrlInObject = (obj: any): string | null => {
   if (!obj) return null;
   if (typeof obj === 'string') {
@@ -392,7 +354,6 @@ const App = () => {
   const [videoRatio, setVideoRatio] = useState('9:16');
   const [activeModal, setActiveModal] = useState<ModalType>('announcement');
   const [previewAsset, setPreviewAsset] = useState<GeneratedAsset | null>(null);
-  const [previewRefImage, setPreviewRefImage] = useState<ReferenceImage | null>(null);
   const [config, setConfig] = useState<AppConfig>({ baseUrl: FIXED_BASE_URL, apiKey: '' });
   const [tempConfig, setTempConfig] = useState<AppConfig>(config);
   const [prompt, setPrompt] = useState('');
@@ -400,19 +361,10 @@ const App = () => {
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [imageSize, setImageSize] = useState('AUTO');
   const [aspectRatio, setAspectRatio] = useState('1:1');
-  const [generationCount, setGenerationCount] = useState(1);
+  const [generationCount] = useState(1);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [generatedAssets, setGeneratedAssets] = useState<GeneratedAsset[]>([]);
-  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [isSelecting, setIsSelecting] = useState(false);
-  const [selectionStart, setSelectionStart] = useState({ x: 0, y: 0 });
-  const [selectionCurrent, setSelectionCurrent] = useState({ x: 0, y: 0 });
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [draggedPromptIdx, setDraggedPromptIdx] = useState<number | null>(null);
-  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
-  const [editingLibraryId, setEditingLibraryId] = useState<string | null>(null);
-  const [editingLibraryText, setEditingLibraryText] = useState('');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [balance, setBalance] = useState<string | null>(null);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
@@ -448,7 +400,7 @@ const App = () => {
         setReferenceImages(prev => prev.slice(0, max));
       }
     }
-  }, [selectedModel, selectedVideoModel, mainCategory, aspectRatio, imageSize, videoRatio]);
+  }, [selectedModel, selectedVideoModel, mainCategory, aspectRatio, imageSize, videoRatio, referenceImages.length]);
 
   useEffect(() => {
     getAllAssetsFromDB().then(assets => {
@@ -463,6 +415,7 @@ const App = () => {
     if (savedLibrary) {
         try { setLibraryPrompts(JSON.parse(savedLibrary)); } catch (e) { setLibraryPrompts([]); }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -485,16 +438,12 @@ const App = () => {
     if (!key) { setBalance(null); return; }
     setIsLoadingBalance(true);
     try {
-      // Proxies like OneAPI/NewAPI support OpenAI's dashboard billing format
-      // First get hard limit
       const subRes = await fetch(`${url}/v1/dashboard/billing/subscription`, {
         headers: { 'Authorization': `Bearer ${key}` }
       });
       if (!subRes.ok) throw new Error("Subscription fetch failed");
       const subData = await subRes.json();
       
-      // Get usage
-      // Using a wide range to get total lifetime usage for the key
       const start = '2023-01-01';
       const now = new Date();
       const end = now.toISOString().split('T')[0];
@@ -547,7 +496,6 @@ const App = () => {
                     const assets = await getAllAssetsFromDB();
                     const existing = assets.find(a => a.id === assetId);
                     if (existing) saveAssetToDB({ ...existing, ...assetUpdates });
-                    // Refresh balance after completion
                     if (configRef.current.apiKey) fetchBalance(configRef.current.apiKey, configRef.current.baseUrl);
                  } else {
                      setGeneratedAssets(prev => prev.map(a => a.id === assetId ? { ...a, status: 'failed', genTimeLabel: '无图' } : a));
@@ -583,7 +531,6 @@ const App = () => {
                 const assets = await getAllAssetsFromDB();
                 const existing = assets.find(a => a.id === assetId);
                 if (existing) saveAssetToDB({ ...existing, ...assetUpdates });
-                // Refresh balance after completion
                 if (configRef.current.apiKey) fetchBalance(configRef.current.apiKey, configRef.current.baseUrl);
                 clearInterval(interval);
             } else if (isFailed) {
@@ -686,7 +633,6 @@ const App = () => {
           const updated: GeneratedAsset = { ...p, url, genTimeLabel: `${diff}s`, status: 'completed', timestamp: Date.now() };
           setGeneratedAssets(prev => prev.map(a => a.id === p.id ? updated : a));
           saveAssetToDB(updated);
-          // Refresh balance after successful gen
           if (configRef.current.apiKey) fetchBalance(configRef.current.apiKey, configRef.current.baseUrl);
       } else {
           setGeneratedAssets(prev => prev.map(a => a.id === p.id ? { ...a, status: 'failed', genTimeLabel: '失败' } : a));
@@ -733,10 +679,8 @@ const App = () => {
     setGeneratedAssets(prev => prev.filter(a => a.id !== id));
   };
 
-  const handleCopyPrompt = (p: string, id: string) => {
+  const handleCopyPrompt = (p: string) => {
     navigator.clipboard.writeText(p);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const selectStyle = (style: string) => {
@@ -757,15 +701,20 @@ const App = () => {
         const data = await res.json();
         const text = data.choices?.[0]?.message?.content?.trim();
         if (text) setPrompt(text);
-        // Refresh balance after optimization
         if (configRef.current.apiKey) fetchBalance(configRef.current.apiKey, configRef.current.baseUrl);
     } catch (e) { setError("优化失败"); } finally { setIsOptimizing(false); }
+  };
+
+  const savePromptToLibrary = () => {
+    if (!prompt.trim()) return;
+    const updated = [{ id: generateUUID(), text: prompt.trim() }, ...libraryPrompts];
+    setLibraryPrompts(updated);
+    localStorage.setItem('mx_library_prompts', JSON.stringify(updated));
   };
 
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-500 ${isDarkMode ? 'bg-[#121212] text-white' : 'bg-[#F9FAFB] text-black'}`}>
       
-      {/* Header */}
       <header className={`h-16 flex items-center justify-between px-6 border-b z-30 transition-colors ${isDarkMode ? 'bg-[#1E1E1E] border-white/10' : 'bg-white border-slate-200'}`}>
         <div className="flex items-center gap-4">
           <div 
@@ -782,7 +731,6 @@ const App = () => {
             <span className="text-lg font-bold">¥</span>
           </button>
           
-          {/* Check Balance Display */}
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all hover:scale-[1.02] cursor-pointer ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200'}`} 
                onClick={() => config.apiKey && fetchBalance(config.apiKey, config.baseUrl)} 
                title="刷新余额">
@@ -799,7 +747,6 @@ const App = () => {
         </div>
       </header>
 
-      {/* Main Content (Gallery) */}
       <main ref={galleryRef} className="flex-1 overflow-y-auto p-6 pb-48 no-scrollbar">
         {generatedAssets.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center opacity-20">
@@ -846,7 +793,6 @@ const App = () => {
         )}
       </main>
 
-      {/* Gemini Style Commands at Bottom */}
       <div className="fixed bottom-0 inset-x-0 p-4 z-40">
         <div className={`max-w-4xl mx-auto rounded-[2rem] border-2 shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ${isDarkMode ? 'bg-[#252525] border-white/10' : 'bg-white border-slate-200'}`}>
           
@@ -863,7 +809,7 @@ const App = () => {
             <div className="p-3 flex gap-3 overflow-x-auto border-b border-black/5 bg-black/5">
               {referenceImages.map(img => (
                 <div key={img.id} className="relative w-16 h-16 rounded-xl overflow-hidden group">
-                  <img src={img.data.startsWith('http') ? img.data : `data:${img.mimeType};base64,${img.data}`} className="w-full h-full object-cover" />
+                  <img src={img.data.startsWith('http') ? img.data : `data:${img.mimeType};base64,${img.data}`} alt="Ref" className="w-full h-full object-cover" />
                   <button onClick={() => setReferenceImages(prev => prev.filter(i => i.id !== img.id))} className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100"><X className="w-3 h-3"/></button>
                 </div>
               ))}
@@ -914,7 +860,6 @@ const App = () => {
         </div>
       </div>
 
-      {/* Modals */}
       {activeModal === 'settings' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className={`w-full max-w-md rounded-2xl overflow-hidden shadow-2xl transition-colors ${isDarkMode ? 'bg-[#1E1E1E]' : 'bg-white'}`}>
@@ -1073,12 +1018,12 @@ const App = () => {
                  {previewAsset.type === 'video' ? (
                     <video src={previewAsset.url} controls autoPlay loop className="max-w-full max-h-full rounded-2xl shadow-2xl" />
                  ) : (
-                    <img src={previewAsset.url} className="max-w-full max-h-full rounded-2xl shadow-2xl object-contain" />
+                    <img src={previewAsset.url} alt="Preview" className="max-w-full max-h-full rounded-2xl shadow-2xl object-contain" />
                  )}
               </div>
               <div className="flex gap-4 p-4 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/10">
                  <a href={previewAsset.url} download className="flex items-center gap-2 px-8 py-3 bg-gradient-to-br from-[#22D3EE] to-[#10B981] text-white rounded-full font-bold uppercase italic"><Download className="w-5 h-5" /> 下载</a>
-                 <button onClick={() => handleCopyPrompt(previewAsset.prompt, previewAsset.id)} className="flex items-center gap-2 px-8 py-3 bg-white/10 text-white rounded-full font-bold uppercase italic"><Copy className="w-5 h-5" /> 复制指令</button>
+                 <button onClick={() => handleCopyPrompt(previewAsset.prompt)} className="flex items-center gap-2 px-8 py-3 bg-white/10 text-white rounded-full font-bold uppercase italic"><Copy className="w-5 h-5" /> 复制指令</button>
               </div>
            </div>
         </div>
