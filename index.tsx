@@ -705,13 +705,6 @@ const App = () => {
     } catch (e) { setError("优化失败"); } finally { setIsOptimizing(false); }
   };
 
-  const savePromptToLibrary = () => {
-    if (!prompt.trim()) return;
-    const updated = [{ id: generateUUID(), text: prompt.trim() }, ...libraryPrompts];
-    setLibraryPrompts(updated);
-    localStorage.setItem('mx_library_prompts', JSON.stringify(updated));
-  };
-
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-500 ${isDarkMode ? 'bg-[#121212] text-white' : 'bg-[#F9FAFB] text-black'}`}>
       
@@ -796,6 +789,15 @@ const App = () => {
       <div className="fixed bottom-0 inset-x-0 p-4 z-40">
         <div className={`max-w-4xl mx-auto rounded-[2rem] border-2 shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ${isDarkMode ? 'bg-[#252525] border-white/10' : 'bg-white border-slate-200'}`}>
           
+          {error && (
+            <div className="px-6 py-2 bg-rose-500/10 border-b border-rose-500/20 flex items-center justify-between">
+               <div className="flex items-center gap-2 text-rose-500 text-[10px] font-bold">
+                 <AlertCircle className="w-3 h-3" /> {error}
+               </div>
+               <button onClick={() => setError(null)}><X className="w-3 h-3 text-rose-500" /></button>
+            </div>
+          )}
+
           <div className="flex border-b border-black/5">
             <button onClick={() => setMainCategory('image')} className={`flex-1 py-3 text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all ${mainCategory === 'image' ? (isDarkMode ? 'bg-cyan-400/10 text-cyan-400' : 'bg-cyan-50 text-cyan-600') : 'text-slate-400 hover:text-slate-600'}`}>
               <ImageIcon className="w-4 h-4"/> 图片创作
