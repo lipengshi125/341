@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { 
   Settings2, 
   Loader2, Download,
-  Bot, X, AlertCircle, Plus,
+  Bot, X, AlertCircle,
   RefreshCw, Maximize2, Headset,
   Megaphone, Lock,
   Copy, Trash2,
@@ -283,9 +283,9 @@ const findImageUrlInObject = (obj: any): string | null => {
 };
 
 // --- IndexedDB ---
-const DB_NAME = 'mx_ai_db_v2';
+const DB_NAME = 'mx_ai_db_v3';
 const STORE_NAME = 'assets';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -931,7 +931,7 @@ const App = () => {
       {activeModal === 'price' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
             <div className={`w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl ${isDarkMode ? 'bg-[#1E1E1E]' : 'bg-white'}`}>
-                <ModalHeader title="价格说明 / PRICE" icon="¥" onClose={() => setActiveModal(null)} />
+                <ModalHeader title="Price Desc (价格说明)" icon="¥" onClose={() => setActiveModal(null)} />
                 <div className="max-h-[70vh] overflow-y-auto no-scrollbar">
                     <div className="p-0">
                         <div className="bg-slate-700/10 dark:bg-white/5 px-6 py-2 font-bold text-cyan-500 uppercase italic text-xs border-y border-black/5">AI优化</div>
