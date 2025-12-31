@@ -79,7 +79,7 @@ const JIMENG_RATIOS = ['1:1', '3:4', '4:3', '9:16', '16:9', '21:9'];
 const MODELS: ModelDefinition[] = [
   { 
     id: 'gemini-2.5-flash-image', 
-    name: 'GEMINI 2.5 FLASH', 
+    name: 'Nano Banana', 
     cost: 'Flash',
     features: ['fast', 'multimodal'],
     maxImages: 4,
@@ -88,7 +88,7 @@ const MODELS: ModelDefinition[] = [
   },
   { 
     id: 'gemini-3-pro-image-preview', 
-    name: 'GEMINI 3 PRO', 
+    name: 'Nano Banana Pro', 
     cost: 'Pro',
     features: ['hd'],
     maxImages: 8,
@@ -106,7 +106,7 @@ const MODELS: ModelDefinition[] = [
   },
   {
     id: 'gpt-image-1-all',
-    name: 'GPT Image 1',
+    name: 'gpt-image-1',
     cost: 'GPT',
     features: ['stable'],
     maxImages: 4,
@@ -115,7 +115,7 @@ const MODELS: ModelDefinition[] = [
   },
   {
     id: 'gpt-image-1.5-all',
-    name: 'GPT Image 1.5',
+    name: 'gpt-image-1.5',
     cost: 'GPT-1.5',
     features: ['detail'],
     maxImages: 4,
@@ -719,7 +719,7 @@ const App = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <button onClick={() => setActiveModal('styles')} className={`p-2 rounded-full transition-all ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`} title="价格说明">
+          <button onClick={() => setActiveModal('price')} className={`p-2 rounded-full transition-all ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`} title="价格说明">
             <span className="text-lg font-bold">¥</span>
           </button>
           
@@ -925,6 +925,79 @@ const App = () => {
               <p className="text-lg font-bold uppercase italic tracking-wider">扫码添加客服微信号</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeModal === 'price' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className={`w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl ${isDarkMode ? 'bg-[#1E1E1E]' : 'bg-white'}`}>
+                <ModalHeader title="价格说明 / PRICE" icon="¥" onClose={() => setActiveModal(null)} />
+                <div className="max-h-[70vh] overflow-y-auto no-scrollbar">
+                    <div className="p-0">
+                        <div className="bg-slate-700/10 dark:bg-white/5 px-6 py-2 font-bold text-cyan-500 uppercase italic text-xs border-y border-black/5">AI优化</div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span className="font-bold">gemini-3-flash-preview</span>
+                          <span>0.002元/次</span>
+                        </div>
+                        
+                        <div className="bg-slate-700/10 dark:bg-white/5 px-6 py-2 font-bold text-cyan-500 uppercase italic text-xs border-y border-black/5">图片模型</div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>Nano Banana</span>
+                          <span>0.06元/张</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>Nano Banana Pro</span>
+                          <span>0.22元-0.40元/张</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>Kling Image O1</span>
+                          <span>0.24元/张</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>gpt-image-1</span>
+                          <span>0.06元/张</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>gpt-image-1.5</span>
+                          <span>0.06元/张</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>Grok 4 Image</span>
+                          <span>0.06元/张</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>Jimeng 4.5</span>
+                          <span>0.13元/张</span>
+                        </div>
+                        
+                        <div className="bg-slate-700/10 dark:bg-white/5 px-6 py-2 font-bold text-cyan-500 uppercase italic text-xs border-y border-black/5">视频模型</div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>VEO 3.1 FAST</span>
+                          <span>0.11元/次</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>VEO 3.1 PRO</span>
+                          <span>2.45元/次</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>Jimeng Video 3.0</span>
+                          <span>0.266元/条</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>Sora 2</span>
+                          <span>0.08元/条</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>Sora 2 Pro</span>
+                          <span>2.52元/条</span>
+                        </div>
+                        <div className="px-6 py-3 flex justify-between border-b border-black/5">
+                          <span>Grok Video 3</span>
+                          <span>0.14元/条</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
       )}
 
